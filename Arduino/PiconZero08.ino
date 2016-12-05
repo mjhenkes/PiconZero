@@ -31,10 +31,10 @@ Register  Name      Type  Values
 11  Output3_Data    Byte  Data value(s)
 12  Output4_Data    Byte  Data value(s)
 13  Output5_Data    Byte  Data value(s)
-14  Input0_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup), 4:PWM
-15  Input1_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup), 4:PWM 
-16  Input2_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup), 4:PWM
-17  Input3_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup), 4:PWM
+14  Input0_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup)
+15  Input1_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup)
+16  Input2_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup)
+17  Input3_Config   Byte  0: Digital, 1:Analog, 2:DS18B20, 3:DHT11 (NB. 0x80 is Digital input with pullup)
 18  Set Brightness  Byte  0..255. Scaled max brightness (default is 40)
 19  Update Pixels   Byte  dummy value - forces updating of neopixels
 20  Reset           Byte  dummy value - resets all values to initial state
@@ -87,13 +87,11 @@ Mode  Name    Type    Values
 #define UPDATE_NOW    19
 #define RESET         20
 
-#define EI_ARDUINO_INTERRUPTED_PIN
 
 #include <Wire.h>
 #include <Servo.h>
 #include "FastLED.h"
 #include <OneWire.h>
-#include <EnableInterrupt.h>
 
 #define I2CADDR     0x22
 #define NUMMOTORS   10 // includes 2 for each motor as well as the general purpose output pins
@@ -107,16 +105,12 @@ Mode  Name    Type    Values
 #define CFGSERVO  2
 #define CFG2812   3
 
-// Input Config Values
+// Input COnfig Values
 #define CFGDIG    0
 #define CFGDIGPU  0x80
 #define CFGANA    1
 #define CFG18B20  2
 #define CFGDHT11  3
-#define CFGPWMIN  4
-
-#define INTRISING 1
-#define INTFALLING 0
 
 //#define SERVO0    9
 //#define SERVO1    10
@@ -132,12 +126,12 @@ bool doShow = false;
 bool Done2812 = false;
 
 // Constants for Output Pins
-#define out0  9   // PWM 490 Hz
-#define out1  10  // PWM 490 Hz
+#define out0  9
+#define out1  10
 #define out2  2
-#define out3  3   // PWM 490 Hz
+#define out3  3
 #define out4  4
-#define out5  5   // PWM 980 Hz BB 373 Hz
+#define out5  5
 
 // DS18S20 Temperature chip i/o
 OneWire ds0(A0);  // on pin A0
@@ -158,14 +152,12 @@ byte motors[NUMMOTORS] = {6, 7, 8, 11, out0, out1, out2, out3, out4, out5}; // a
 const byte outputs[NUMOUTPUTS] = {out0, out1, out2, out3, out4, out5};
 byte inputs[NUMINPUTS] = {A0, A1, A2, A3};
 Servo servos[NUMSERVOS];
-volatile int inputValues[NUMINPUTS]; // store analog input values (words)
-volatile unsigned long pwmTimeValues[NUMINPUTS]; // the time of the rising edge of a pwm input (words)
-volatile unsigned long interrupt[NUMINPUTS][2];
+int inputValues[NUMINPUTS]; // store analog input values (words)
 byte outputConfigs[NUMOUTPUTS] = {0, 0, 0, 0, 0, 0};  // 0: On/Off, 1: PWM, 2: Servo, 3: WS2812B
 byte inputConfigs[NUMINPUTS] = {0, 0, 0, 0};    // 0: Digital, 1:Analog
 byte inputChannel = 0; // selected reading channel
 byte pwmcount = 0;
-//int i;
+int i;
 
 void setup()
 {
@@ -178,7 +170,7 @@ void setup()
     Serial.println("Starting...");
     delay(1000);
   }
-  for (int i = 0; i < NUMMOTORS; i++)
+  for (i = 0; i < NUMMOTORS; i++)
     pinMode (motors[i], OUTPUT);
   FastLED.addLeds<WS2812B, out5, RGB>(leds, NUM_LEDS);  // always have WS2812B enabled on output 5
   FastLED.setBrightness(BRIGHT);  // sets the maximum brightness level. All values are scaled to fit in this range
@@ -190,21 +182,21 @@ void setup()
 void resetAll()
 {
   //disconnect all servos
-  for (int i=0; i<NUMSERVOS; i++)
+  for (i=0; i<NUMSERVOS; i++)
     servos[i].detach();
   //clear all WS2812B
   allOff();  
   // set all PWM values to 0 and all outputs to low
-  for (int i=0; i<NUMMOTORS; i++)
+  for (i=0; i<NUMMOTORS; i++)
   {
     pwm[i] = 0;
     digitalWrite(motors[i], LOW);
   }
   // set all inputs to Digital
-  for (int i=0; i<NUMINPUTS; i++)
+  for (i=0; i<NUMINPUTS; i++)
     inputConfigs[i] = CFGDIG;
   // set all outputs to On/Off
-  for (int i=0; i<NUMOUTPUTS; i++)
+  for (i=0; i<NUMOUTPUTS; i++)
     outputConfigs[i] = CFGONOFF;
 }
 
@@ -212,22 +204,10 @@ void resetAll()
 // The main loop handles the PWM for every motor. Counts from 1..100 and matches the count value with the pwm values. If the same then the signal goes from Low to High
 void loop()
 {
-    for (int i = 0; i < NUMINPUTS; i++)
-    {
-      if (inputConfigs[i] == CFGPWMIN)
-      {
-        unsigned long pwmFalling = interrupt[i][INTFALLING];
-        if (pwmFalling > 0)
-        {
-          unsigned long pwmRising = interrupt[i][INTRISING];
-          inputValues[i] = (float)((float)(pwmFalling-pwmRising)/2000) * 100;
-        }
-      }
-    }
-//  Serial.println("Looping...");
+  //Serial.println("Looping...");
   if (pwmcount == 0)
   {
-    for (int i=0; i<NUMMOTORS; i++)
+    for (i=0; i<NUMMOTORS; i++)
       if (pwm[i]>0 && pwm[i]<100)    // PWM values of 0 or 100 means no PWM, so never change this pin
       {
         //Serial.println("High:" + String(motors[i]));
@@ -236,7 +216,7 @@ void loop()
   }
   else
   {
-    for (int i=0; i<NUMMOTORS; i++)
+    for (i=0; i<NUMMOTORS; i++)
       if (pwm[i] == pwmcount)
       {
         //Serial.println("Low:" + String(motors[i]));
@@ -449,19 +429,11 @@ void setOutCfg(byte outReg, byte value)
 
 void setInCfg(byte inReg, byte value)
 {
-  if (DEBUG)
-  {
-    Serial.println("inReg:" + String(inReg) + "  value:" + String(value));
-  }
   inputConfigs[inReg] = value;
-  if (value == CFGDIGPU) 
-  {
+  if (value == CFGDIGPU)
     pinMode(inputs[inReg], INPUT_PULLUP);
-  }
   else
-  {
     pinMode(inputs[inReg], INPUT);
-  }
   if (value == CFG18B20)
   {
     switch (inReg)
@@ -471,17 +443,6 @@ void setInCfg(byte inReg, byte value)
       case 2: ds2.reset_search(); ds2.search(B20_addr2); break;
       case 3: ds3.reset_search(); ds3.search(B20_addr3); break;
     }
-  }
-  if (value == CFGPWMIN)
-  {
-    Serial.println("set interrupt");
-    Serial.println("config: " + String(inputConfigs[inReg]));
-    digitalWrite(inputs[inReg], HIGH);
-    enableInterrupt(inputs[inReg], measurePWM, CHANGE);
-  }
-  else
-  {
-    disableInterrupt(inputs[inReg]);
   }
 }
 
@@ -497,7 +458,6 @@ void setOutData(byte outReg, byte value)
         digitalWrite(outputs[outReg], HIGH);
       break;
     case CFGPWM:
-//      analogWrite(outputs[outReg], 127);
       if (value == 0)
       {
         pwm[outReg + 4] = 0;
@@ -553,28 +513,28 @@ int getTemp(int index)
       ds0.reset();
       ds0.select(B20_addr0);
       ds0.write(0xBE);         // Read Scratchpad
-      for ( int i = 0; i < 9; i++)
+      for ( i = 0; i < 9; i++)
         data[i] = ds0.read();
       break;
     case 1:
       ds1.reset();
       ds1.select(B20_addr1);
       ds1.write(0xBE);         // Read Scratchpad
-      for ( int i = 0; i < 9; i++)
+      for ( i = 0; i < 9; i++)
         data[i] = ds1.read();
       break;
     case 2:
       ds2.reset();
       ds2.select(B20_addr2);
       ds2.write(0xBE);         // Read Scratchpad
-      for ( int i = 0; i < 9; i++)
+      for ( i = 0; i < 9; i++)
         data[i] = ds2.read();
       break;
     case 3:
       ds3.reset();
       ds3.select(B20_addr3);
       ds3.write(0xBE);         // Read Scratchpad
-      for ( int i = 0; i < 9; i++)
+      for ( i = 0; i < 9; i++)
         data[i] = ds3.read();
       break;
   }
@@ -596,27 +556,5 @@ void startConversion(int index)
 int getDHT(int index)
 {
   
-}
-
-void measurePWM()
-{
- unsigned long now = micros();
- int index = arduinoInterruptedPin - 14;
- interrupt[index][0] = 0;
- interrupt[index][arduinoPinState > 0] = now;
-// if (arduinoPinState == 0) // Falling
-// { 
-//  Serial.println("Int f: " + String(now) + " - r:" + String(pwmTimeValues[index]) + "= pwm:" + String(now-pwmTimeValues[index]));
-////  Serial.println("pwm int:"+ String(now-pwmTimeValues[index]));
-////  inputValues[index] = ((float)(now-pwmTimeValues[index])/2680) * 100;
-// }
-// else // Rising
-// {
-//    pwmTimeValues[index] = now;
-// }
-// if (DEBUG)
-// {
-//    Serial.println("DutyCycle:"+ String(inputValues[index]) +" IntPin:" + String(arduinoInterruptedPin) + "  state:" + String(arduinoPinState));
-// }
 }
 
