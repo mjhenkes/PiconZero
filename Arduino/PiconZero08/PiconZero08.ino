@@ -213,37 +213,6 @@ void resetAll()
 // The main loop handles the PWM for every motor. Counts from 1..100 and matches the count value with the pwm values. If the same then the signal goes from Low to High
 void loop()
 {
-//    for (int i = 0; i < NUMINPUTS; i++)
-//    {
-//      if (inputConfigs[i] == CFGPWMIN)
-//      {
-//        unsigned long pwmFalling = interrupt[i][INTFALLING];
-//        unsigned long pwmRising = interrupt[i][INTRISING];
-//        unsigned long period = pwmPeriod[i];
-//        if (pwmFalling > 0 && pwmRising > 0)
-//        {
-//          inputValues[i] = (float)((float)(pwmFalling-pwmRising)/period) * 100;
-//          interrupt[i][INTRISING] = 0; // Signal calculation complete
-//        }
-//        else if (pwmFalling > 0)
-//        {
-//          if (pwmFalling - micros() >= period)
-//          {
-//            inputValues[i] = 0;
-//            interrupt[i][INTFALLING] = 0;
-//          }
-//        }
-//        else if (pwmRising > 0)
-//        {
-//          if (pwmRising - micros() >= period)
-//          {
-//            inputValues[i] = 100;
-//            interrupt[i][INTRISING] = 0;
-//          }
-//        }
-//      }
-//    }
-//  Serial.println("Looping...");
   if (pwmcount == 0)
   {
     for (int i=0; i<NUMMOTORS; i++)
@@ -496,7 +465,7 @@ void setInCfg(byte inReg, byte value)
   {
     digitalWrite(inputs[inReg], HIGH);
     enableInterrupt(inputs[inReg], storeEdgeTime, CHANGE);
-    inputValues[i] = 0;
+    inputValues[inReg] = 0;
   }
   else
   {
@@ -627,22 +596,23 @@ int getPWM(int index)
     interrupt[index][INTRISING] = 0; // Signal calculation complete
     return (float)((float)(pwmFalling-pwmRising)/period) * 100;
   }
-  else if (pwmFalling > 0)
+  else if (periodExceeded(pwmFalling, period))
   {
-    if (pwmFalling - micros() >= period)
-    {
-      interrupt[index][INTFALLING] = 0;
-      return 0;
-    }
+    // signal low longer than set period. 0% duty cycle.
+    interrupt[index][INTFALLING] = 0;
+    return 0;
   }
-  else if (pwmRising > 0)
+  else if (periodExceeded(pwmRising, period))
   {
-    if (pwmRising - micros() >= period)
-    {
-      interrupt[index][INTRISING] = 0;
-      return 100;
-    }
+    // signal high longer than set period. 100% duty cycle.
+    interrupt[index][INTRISING] = 0;
+    return 100;
   }
+}
+
+bool periodExceeded(unsigned long edge, unsigned long period)
+{
+  return (edge > 0 && edge - micros() >= period);
 }
 
 // On voltage change, store data required to calculate the pwm.
