@@ -161,6 +161,7 @@ Servo servos[NUMSERVOS];
 volatile int inputValues[NUMINPUTS]; // store analog input values (words)
 volatile unsigned long pwmTimeValues[NUMINPUTS]; // the time of the rising edge of a pwm input (words)
 volatile unsigned long interrupt[NUMINPUTS][2];
+volatile unsigned long pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
 byte outputConfigs[NUMOUTPUTS] = {0, 0, 0, 0, 0, 0};  // 0: On/Off, 1: PWM, 2: Servo, 3: WS2812B
 byte inputConfigs[NUMINPUTS] = {0, 0, 0, 0};    // 0: Digital, 1:Analog
 byte inputChannel = 0; // selected reading channel
@@ -212,18 +213,36 @@ void resetAll()
 // The main loop handles the PWM for every motor. Counts from 1..100 and matches the count value with the pwm values. If the same then the signal goes from Low to High
 void loop()
 {
-    for (int i = 0; i < NUMINPUTS; i++)
-    {
-      if (inputConfigs[i] == CFGPWMIN)
-      {
-        unsigned long pwmFalling = interrupt[i][INTFALLING];
-        if (pwmFalling > 0)
-        {
-          unsigned long pwmRising = interrupt[i][INTRISING];
-          inputValues[i] = (float)((float)(pwmFalling-pwmRising)/2000) * 100;
-        }
-      }
-    }
+//    for (int i = 0; i < NUMINPUTS; i++)
+//    {
+//      if (inputConfigs[i] == CFGPWMIN)
+//      {
+//        unsigned long pwmFalling = interrupt[i][INTFALLING];
+//        unsigned long pwmRising = interrupt[i][INTRISING];
+//        unsigned long period = pwmPeriod[i];
+//        if (pwmFalling > 0 && pwmRising > 0)
+//        {
+//          inputValues[i] = (float)((float)(pwmFalling-pwmRising)/period) * 100;
+//          interrupt[i][INTRISING] = 0; // Signal calculation complete
+//        }
+//        else if (pwmFalling > 0)
+//        {
+//          if (pwmFalling - micros() >= period)
+//          {
+//            inputValues[i] = 0;
+//            interrupt[i][INTFALLING] = 0;
+//          }
+//        }
+//        else if (pwmRising > 0)
+//        {
+//          if (pwmRising - micros() >= period)
+//          {
+//            inputValues[i] = 100;
+//            interrupt[i][INTRISING] = 0;
+//          }
+//        }
+//      }
+//    }
 //  Serial.println("Looping...");
   if (pwmcount == 0)
   {
@@ -257,6 +276,7 @@ void loop()
         case CFGANA: inputValues[i] = analogRead(inputs[i]); break;
         case CFG18B20: startConversion(i); inputValues[i] = getTemp(i); break; // data read is from previous conversion as it can take up to 750ms
         case CFGDHT11: inputValues[i] = getDHT(i); break;
+        case CFGPWMIN: inputValues[i] = getPWM(i); break;
       }
     }
     if (doShow)
@@ -474,10 +494,9 @@ void setInCfg(byte inReg, byte value)
   }
   if (value == CFGPWMIN)
   {
-    Serial.println("set interrupt");
-    Serial.println("config: " + String(inputConfigs[inReg]));
     digitalWrite(inputs[inReg], HIGH);
-    enableInterrupt(inputs[inReg], measurePWM, CHANGE);
+    enableInterrupt(inputs[inReg], storeEdgeTime, CHANGE);
+    inputValues[i] = 0;
   }
   else
   {
@@ -598,25 +617,42 @@ int getDHT(int index)
   
 }
 
-void measurePWM()
+int getPWM(int index)
+{
+  unsigned long pwmFalling = interrupt[index][INTFALLING];
+  unsigned long pwmRising = interrupt[index][INTRISING];
+  unsigned long period = pwmPeriod[index];
+  if (pwmFalling > 0 && pwmRising > 0)
+  {
+    interrupt[index][INTRISING] = 0; // Signal calculation complete
+    return (float)((float)(pwmFalling-pwmRising)/period) * 100;
+  }
+  else if (pwmFalling > 0)
+  {
+    if (pwmFalling - micros() >= period)
+    {
+      interrupt[index][INTFALLING] = 0;
+      return 0;
+    }
+  }
+  else if (pwmRising > 0)
+  {
+    if (pwmRising - micros() >= period)
+    {
+      interrupt[index][INTRISING] = 0;
+      return 100;
+    }
+  }
+}
+
+// On voltage change, store data required to calculate the pwm.
+void storeEdgeTime()
 {
  unsigned long now = micros();
+ // Input pins are between 14 and 18
  int index = arduinoInterruptedPin - 14;
- interrupt[index][0] = 0;
+ // Always set falling edge to zero. If this change is the falling edge the correct value will be set next. If rising and falling are set the PWM is ready to be calculated.
+ interrupt[index][INTFALLING] = 0;
  interrupt[index][arduinoPinState > 0] = now;
-// if (arduinoPinState == 0) // Falling
-// { 
-//  Serial.println("Int f: " + String(now) + " - r:" + String(pwmTimeValues[index]) + "= pwm:" + String(now-pwmTimeValues[index]));
-////  Serial.println("pwm int:"+ String(now-pwmTimeValues[index]));
-////  inputValues[index] = ((float)(now-pwmTimeValues[index])/2680) * 100;
-// }
-// else // Rising
-// {
-//    pwmTimeValues[index] = now;
-// }
-// if (DEBUG)
-// {
-//    Serial.println("DutyCycle:"+ String(inputValues[index]) +" IntPin:" + String(arduinoInterruptedPin) + "  state:" + String(arduinoPinState));
-// }
 }
 

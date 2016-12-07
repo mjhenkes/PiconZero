@@ -103,9 +103,9 @@ def setOutputConfig (output, value):
 
 #---------------------------------------------
 # Set configuration of selected input channel
-# 0: Digital, 1: Analog
+# 0: Digital, 1: Analog, 2: DS18B20, 4: PWM
 def setInputConfig (channel, value, pullup = False):
-    if (channel>=0 and channel <=3 and value>=0 and value<=3):
+    if (channel>=0 and channel <=3 and value>=0 and value<=4):
         if (value==0 and pullup==True):
             value = 128
         for i in range(RETRIES):
