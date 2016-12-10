@@ -16,6 +16,7 @@ INCFG0 = 14
 SETBRIGHT = 18
 UPDATENOW = 19
 RESET = 20
+INPERIOD0 = 21
 #---------------------------------------------
 
 #---------------------------------------------
@@ -104,13 +105,15 @@ def setOutputConfig (output, value):
 #---------------------------------------------
 # Set configuration of selected input channel
 # 0: Digital, 1: Analog, 2: DS18B20, 4: PWM
-def setInputConfig (channel, value, pullup = False):
+def setInputConfig (channel, value, pullup = False, period = 2000):
     if (channel>=0 and channel <=3 and value>=0 and value<=4):
         if (value==0 and pullup==True):
             value = 128
         for i in range(RETRIES):
             try:
                 bus.write_byte_data (pzaddr, INCFG0 + channel, value)
+                if (period):
+                    bus.write_byte_data (pzaddr, INPERIOD0 + channel, period)
                 break
             except:
                 if (DEBUG):

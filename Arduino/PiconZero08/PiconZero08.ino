@@ -86,6 +86,10 @@ Mode  Name    Type    Values
 #define SET_BRIGHT    18
 #define UPDATE_NOW    19
 #define RESET         20
+#define INPUT0_PERIOD 21
+#define INPUT1_PERIOD 22
+#define INPUT2_PERIOD 23
+#define INPUT3_PERIOD 24
 
 #define EI_ARDUINO_INTERRUPTED_PIN
 
@@ -158,10 +162,9 @@ byte motors[NUMMOTORS] = {6, 7, 8, 11, out0, out1, out2, out3, out4, out5}; // a
 const byte outputs[NUMOUTPUTS] = {out0, out1, out2, out3, out4, out5};
 byte inputs[NUMINPUTS] = {A0, A1, A2, A3};
 Servo servos[NUMSERVOS];
-volatile int inputValues[NUMINPUTS]; // store analog input values (words)
-volatile unsigned long pwmTimeValues[NUMINPUTS]; // the time of the rising edge of a pwm input (words)
+int inputValues[NUMINPUTS]; // store analog input values (words)
 volatile unsigned long interrupt[NUMINPUTS][2];
-volatile unsigned long pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
+unsigned long pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
 byte outputConfigs[NUMOUTPUTS] = {0, 0, 0, 0, 0, 0};  // 0: On/Off, 1: PWM, 2: Servo, 3: WS2812B
 byte inputConfigs[NUMINPUTS] = {0, 0, 0, 0};    // 0: Digital, 1:Analog
 byte inputChannel = 0; // selected reading channel
@@ -314,6 +317,10 @@ void receiveEvent(int count)
       case INPUT1_CFG: setInCfg(1, regVal); break;
       case INPUT2_CFG: setInCfg(2, regVal); break;
       case INPUT3_CFG: setInCfg(3, regVal); break;
+      case INPUT0_PERIOD: pwmPeriod[0] = regVal; break;
+      case INPUT1_PERIOD: pwmPeriod[1] = regVal; break;
+      case INPUT2_PERIOD: pwmPeriod[2] = regVal; break;
+      case INPUT3_PERIOD: pwmPeriod[3] = regVal; break;
       case SET_BRIGHT: FastLED.setBrightness(regVal); break;
       case UPDATE_NOW: doShow = true; break;
       case RESET: resetAll(); break;
