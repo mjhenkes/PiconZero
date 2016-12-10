@@ -112,7 +112,7 @@ def setInputConfig (channel, value, pullup = False, period = 2000):
         for i in range(RETRIES):
             try:
                 bus.write_byte_data (pzaddr, INCFG0 + channel, value)
-                if (period):
+                if (channel == 4):
                     bus.write_byte_data (pzaddr, INPERIOD0 + channel, period)
                 break
             except:
