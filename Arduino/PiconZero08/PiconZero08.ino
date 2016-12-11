@@ -61,7 +61,7 @@ Mode  Name    Type    Values
 /* Rev08: Adds Pullup option for Digital and DS18B20 inputs
 */
 
-#define DEBUG         true
+#define DEBUG         false
 #define BOARD_REV     2   // Board ID for PiconZero
 #define FIRMWARE_REV  8   // Firmware Revision
 
@@ -91,7 +91,11 @@ Mode  Name    Type    Values
 #define INPUT2_PERIOD 23
 #define INPUT3_PERIOD 24
 
+// Enable Interrupt setup
 #define EI_ARDUINO_INTERRUPTED_PIN
+#define EI_NOTEXTERNAL
+#define EI_NOTPORTB
+#define EI_NOTPORTD
 
 #include <Wire.h>
 #include <Servo.h>
@@ -120,6 +124,7 @@ Mode  Name    Type    Values
 #define CFGDC     4
 #define CFGPWIN   5
 
+// Rising and Falling indexes for the pulse width input
 #define INTRISING 1
 #define INTFALLING 0
 
@@ -164,13 +169,12 @@ const byte outputs[NUMOUTPUTS] = {out0, out1, out2, out3, out4, out5};
 byte inputs[NUMINPUTS] = {A0, A1, A2, A3};
 Servo servos[NUMSERVOS];
 int inputValues[NUMINPUTS]; // store analog input values (words)
-volatile unsigned long interrupt[NUMINPUTS][2];
+volatile unsigned long interrupt[NUMINPUTS][2]; // Store rising and falling edges for pulse width inputs.
 int pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
 byte outputConfigs[NUMOUTPUTS] = {0, 0, 0, 0, 0, 0};  // 0: On/Off, 1: PWM, 2: Servo, 3: WS2812B
 byte inputConfigs[NUMINPUTS] = {0, 0, 0, 0};    // 0: Digital, 1:Analog
 byte inputChannel = 0; // selected reading channel
 byte pwmcount = 0;
-//int i;
 
 void setup()
 {
@@ -207,7 +211,9 @@ void resetAll()
   }
   // set all inputs to Digital
   for (int i=0; i<NUMINPUTS; i++)
-    inputConfigs[i] = CFGDIG;
+  {
+    setInCfg(i, CFGDIG); //Call input config to ensure inputs are properly reset.
+  }
   // set all outputs to On/Off
   for (int i=0; i<NUMOUTPUTS; i++)
     outputConfigs[i] = CFGONOFF;
@@ -324,7 +330,7 @@ void receiveEvent(int count)
       case RESET: resetAll(); break;
     }
   }
-  else if (count == 3)
+  else if (count == 3) //Read in period, the value is read in as a word so we get to combine two bytes
   {
     byte regSel = Wire.read();
     int regVal = Wire.read() | Wire.read() << 8;
@@ -483,13 +489,13 @@ void setInCfg(byte inReg, byte value)
       case 3: ds3.reset_search(); ds3.search(B20_addr3); break;
     }
   }
-  if (value == CFGDC || value == CFGPWIN)
+  if (value == CFGDC || value == CFGPWIN) // Steup interupts for the apropriate pins.
   {
     digitalWrite(inputs[inReg], HIGH);
     enableInterrupt(inputs[inReg], storeEdgeTime, CHANGE);
     inputValues[inReg] = 0;
   }
-  else
+  else // disable Interrupt on any non iterrupt pins.
   {
     disableInterrupt(inputs[inReg]);
   }
@@ -507,7 +513,6 @@ void setOutData(byte outReg, byte value)
         digitalWrite(outputs[outReg], HIGH);
       break;
     case CFGPWM:
-//      analogWrite(outputs[outReg], 127);
       if (value == 0)
       {
         pwm[outReg + 4] = 0;
@@ -613,8 +618,7 @@ int getPWM(int index, byte inputConfig)
   unsigned long pwmFalling = interrupt[index][INTFALLING];
   unsigned long pwmRising = interrupt[index][INTRISING];
   int period = pwmPeriod[index];
-  
-  if (pwmFalling > 0 && pwmRising > 0)
+  if (pwmFalling > 0 && pwmRising > 0) // If we have rising and falling edges calcuate the pulse width
   {
     interrupt[index][INTRISING] = 0; // Signal calculation complete
     int pulseWidth = pwmFalling-pwmRising;
@@ -624,32 +628,31 @@ int getPWM(int index, byte inputConfig)
     }
     else
     {
-      return (float)((float)(pulseWidth)/period) * 100;
+      int dutyCycle = (float)((float)(pulseWidth)/period) * 100;
+      if (dutyCycle > 100)
+      {
+        dutyCycle = 100;
+      }
+      return dutyCycle;
     }
   }
   else if (periodExceeded(pwmFalling, period))
   {
-//    Serial.println("rising:" + String(pwmRising) + "  falling:" + String(pwmFalling) + " Period:" + String(period));
-    // signal low longer than set period. 0% duty cycle.
+    // Signal low longer than set period. 0% duty cycle.
     interrupt[index][INTFALLING] = 0;
     return 0;
   }
   else if (periodExceeded(pwmRising, period))
   {
-//    Serial.println("rising:" + String(pwmRising) + "  falling:" + String(pwmFalling) + " Period:" + String(period));
-    // signal high longer than set period. 100% duty cycle.
+    // Signal high longer than set period. 100% duty cycle or 0.
     interrupt[index][INTRISING] = 0;
     return inputConfig == CFGPWIN ? 0 : 100;
   }
+  return inputValues[index];
 }
 
-bool periodExceeded(unsigned long edge, unsigned long period)
+bool periodExceeded(unsigned long edge, unsigned long period) // Check if an edge has exceeded the the set period
 {
-  if (edge > 0)
-  {
-    unsigned long now = micros();
-//    Serial.println("time over:" + String(now - edge));
-  }
   return (edge > 0 && micros() - edge >= period);
 }
 
