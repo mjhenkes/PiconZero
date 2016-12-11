@@ -104,15 +104,15 @@ def setOutputConfig (output, value):
 
 #---------------------------------------------
 # Set configuration of selected input channel
-# 0: Digital, 1: Analog, 2: DS18B20, 4: PWM
+# 0: Digital, 1: Analog, 2: DS18B20, 4: DutyCycle 5: Pulse Width
 def setInputConfig (channel, value, pullup = False, period = 2000):
-    if (channel>=0 and channel <=3 and value>=0 and value<=4):
-        if (value==0 and pullup==True):
+    if (channel >= 0 and channel <= 3 and value >= 0 and value <= 5):
+        if (value == 0 and pullup == True):
             value = 128
         for i in range(RETRIES):
             try:
                 bus.write_byte_data (pzaddr, INCFG0 + channel, value)
-                if (channel == 4):
+                if (value == 4 || value == 5):
                     bus.write_byte_data (pzaddr, INPERIOD0 + channel, period)
                 break
             except:

@@ -61,7 +61,7 @@ Mode  Name    Type    Values
 /* Rev08: Adds Pullup option for Digital and DS18B20 inputs
 */
 
-#define DEBUG         false
+#define DEBUG         true
 #define BOARD_REV     2   // Board ID for PiconZero
 #define FIRMWARE_REV  8   // Firmware Revision
 
@@ -117,7 +117,8 @@ Mode  Name    Type    Values
 #define CFGANA    1
 #define CFG18B20  2
 #define CFGDHT11  3
-#define CFGPWMIN  4
+#define CFGDC     4
+#define CFGPWIN   5
 
 #define INTRISING 1
 #define INTFALLING 0
@@ -164,7 +165,7 @@ byte inputs[NUMINPUTS] = {A0, A1, A2, A3};
 Servo servos[NUMSERVOS];
 int inputValues[NUMINPUTS]; // store analog input values (words)
 volatile unsigned long interrupt[NUMINPUTS][2];
-unsigned long pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
+int pwmPeriod[NUMINPUTS] = {2000, 2000, 2000, 2000};
 byte outputConfigs[NUMOUTPUTS] = {0, 0, 0, 0, 0, 0};  // 0: On/Off, 1: PWM, 2: Servo, 3: WS2812B
 byte inputConfigs[NUMINPUTS] = {0, 0, 0, 0};    // 0: Digital, 1:Analog
 byte inputChannel = 0; // selected reading channel
@@ -248,7 +249,8 @@ void loop()
         case CFGANA: inputValues[i] = analogRead(inputs[i]); break;
         case CFG18B20: startConversion(i); inputValues[i] = getTemp(i); break; // data read is from previous conversion as it can take up to 750ms
         case CFGDHT11: inputValues[i] = getDHT(i); break;
-        case CFGPWMIN: inputValues[i] = getPWM(i); break;
+        case CFGDC: inputValues[i] = getPWM(i, CFGDC); break;
+        case CFGPWIN: inputValues[i] = getPWM(i, CFGPWIN); break;
       }
     }
     if (doShow)
@@ -317,13 +319,26 @@ void receiveEvent(int count)
       case INPUT1_CFG: setInCfg(1, regVal); break;
       case INPUT2_CFG: setInCfg(2, regVal); break;
       case INPUT3_CFG: setInCfg(3, regVal); break;
+      case SET_BRIGHT: FastLED.setBrightness(regVal); break;
+      case UPDATE_NOW: doShow = true; break;
+      case RESET: resetAll(); break;
+    }
+  }
+  else if (count == 3)
+  {
+    byte regSel = Wire.read();
+    int regVal = Wire.read() | Wire.read() << 8;
+    if (DEBUG)
+    {
+      Serial.println("Register:" + String(regSel) + "  Value:" + String(regVal));
+    }
+
+    switch(regSel)
+    {
       case INPUT0_PERIOD: pwmPeriod[0] = regVal; break;
       case INPUT1_PERIOD: pwmPeriod[1] = regVal; break;
       case INPUT2_PERIOD: pwmPeriod[2] = regVal; break;
       case INPUT3_PERIOD: pwmPeriod[3] = regVal; break;
-      case SET_BRIGHT: FastLED.setBrightness(regVal); break;
-      case UPDATE_NOW: doShow = true; break;
-      case RESET: resetAll(); break;
     }
   }
   else if (count == 5)
@@ -468,7 +483,7 @@ void setInCfg(byte inReg, byte value)
       case 3: ds3.reset_search(); ds3.search(B20_addr3); break;
     }
   }
-  if (value == CFGPWMIN)
+  if (value == CFGDC || value == CFGPWIN)
   {
     digitalWrite(inputs[inReg], HIGH);
     enableInterrupt(inputs[inReg], storeEdgeTime, CHANGE);
@@ -593,33 +608,49 @@ int getDHT(int index)
   
 }
 
-int getPWM(int index)
+int getPWM(int index, byte inputConfig)
 {
   unsigned long pwmFalling = interrupt[index][INTFALLING];
   unsigned long pwmRising = interrupt[index][INTRISING];
-  unsigned long period = pwmPeriod[index];
+  int period = pwmPeriod[index];
+  
   if (pwmFalling > 0 && pwmRising > 0)
   {
     interrupt[index][INTRISING] = 0; // Signal calculation complete
-    return (float)((float)(pwmFalling-pwmRising)/period) * 100;
+    int pulseWidth = pwmFalling-pwmRising;
+    if (inputConfig == CFGPWIN)
+    {
+      return pulseWidth;
+    }
+    else
+    {
+      return (float)((float)(pulseWidth)/period) * 100;
+    }
   }
   else if (periodExceeded(pwmFalling, period))
   {
+//    Serial.println("rising:" + String(pwmRising) + "  falling:" + String(pwmFalling) + " Period:" + String(period));
     // signal low longer than set period. 0% duty cycle.
     interrupt[index][INTFALLING] = 0;
     return 0;
   }
   else if (periodExceeded(pwmRising, period))
   {
+//    Serial.println("rising:" + String(pwmRising) + "  falling:" + String(pwmFalling) + " Period:" + String(period));
     // signal high longer than set period. 100% duty cycle.
     interrupt[index][INTRISING] = 0;
-    return 100;
+    return inputConfig == CFGPWIN ? 0 : 100;
   }
 }
 
 bool periodExceeded(unsigned long edge, unsigned long period)
 {
-  return (edge > 0 && edge - micros() >= period);
+  if (edge > 0)
+  {
+    unsigned long now = micros();
+//    Serial.println("time over:" + String(now - edge));
+  }
+  return (edge > 0 && micros() - edge >= period);
 }
 
 // On voltage change, store data required to calculate the pwm.
